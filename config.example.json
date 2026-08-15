@@ -8,6 +8,7 @@
   "httpsCert": "",
   "httpsKey": "",
   "dataDir": "./data",
+  "screenshotsDir": "", 
   "sessionDays": 30,
   "loginWindowMs": 60000
 }

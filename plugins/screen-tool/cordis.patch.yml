@@ -1,0 +1,13 @@
+# screen-tool 补丁：给 dsh web 叠加屏幕截图工具（screenshot / list_windows）。
+#
+# 用法：
+#   node --import tsx/esm apps/cli/src/bin.ts web \
+#     --patch <本文件绝对路径>
+#
+# 注意：Windows 上 Loader 要求插件 name 为 file:// URL（原生盘符路径
+# 会被 ESM loader 拒绝：ERR_UNSUPPORTED_ESM_URL_SCHEME）。若仓库移动了
+# 位置，请同步修改下面 name 的 file:// URL。
+
+- insert:
+    - id: screen-tool
+      name: 'file:///D:/vscproject/phone-agent/plugins/screen-tool/src/index.ts'

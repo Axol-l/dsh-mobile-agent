@@ -1,4 +1,4 @@
-﻿# dsh-phone-agent — DeepSeek Harness 手机访问网关
+# dsh-phone-agent — DeepSeek Harness 手机访问网关
 
 
 手机浏览器登录后获得与桌面端**完全一致**的 DeepSeek Harness 原版界面与全部功能
@@ -71,6 +71,32 @@ node server.mjs
    `web-remote.patch.yml`（禁用 auto、挂 browse 后端：RPC 目录树浏览，
    任何浏览器可用）。
 
+## 屏幕监视（远程查看工作机）
+
+`plugins/screen-tool` 是一个零依赖的 dsh 插件，给 agent 提供
+`screenshot`（桌面/指定窗口截图）与 `list_windows`（窗口枚举）两个工具：
+
+- **图片模型**（声明 image 输入）：截图以图片块进入会话（与内置
+  `read_image` 同一附件机制），GUI 轨迹面板显示、模型可见画面、可描述；
+- **文本模型**（如 DeepSeek 官方适配器，默认）：自动降级为元数据模式，
+  手机浏览器打开 `http://<电脑IP>:8080/shots` 画廊实时查看（每 8 秒自动
+  刷新，登录后访问，文件归档于 `<DSH_HOME>/screenshots/`）；
+- 安装方式：写入 `$DSH_HOME/profiles/web/cordis.patch.yml`（配置 HMR
+  热加载，本机已配好）；详见 `plugins/screen-tool/README.md`。
+- 每次截图调用受 dsh 审批策略控制（默认 ask，手机端确认后执行）。
+
+### 使用方法
+
+| 你想做什么 | 怎么说 |
+|---|---|
+| 看整个屏幕 | 「截个图看看屏幕」 |
+| 看某个窗口 | 「看看 Chrome 窗口 / 列出窗口」 |
+| 持续监视 | 「每 30 秒截一张图」（agent 循环调用，画廊自动刷新） |
+| 直接看画面 | 手机浏览器打开 `http://<电脑IP>:8080/shots`（无需经过对话） |
+
+文本模型下对话中不会出现图片块（模型无法承载），画面一律走 `/shots`
+画廊；图片模型下对话直接可见。
+
 ## 托管模式
 
 `manageWeb: true`（默认）时，若目标 dsh web 不可达，网关会自动从同级
@@ -101,6 +127,7 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 | `DSH_PHONE_AGENT_PASSWORD` | 自动生成 | 访问密码（持久化到 data/auth.json） |
 | `DSH_PHONE_AGENT_SESSION_DAYS` | 30 | 「记住我」有效期（天） |
 | `DSH_PHONE_AGENT_HTTPS_CERT/KEY` | — | HTTPS 证书与私钥路径 |
+| `DSH_PHONE_AGENT_SCREENSHOTS_DIR` | `<DSH_HOME>/screenshots` | 截图归档目录（/shots 画廊读取处） |
 | `DSH_HARNESS_ROOT` | ../deepseek-harness | 托管模式定位 deepseek-harness 检出 |
 
 ## 可靠性设计
@@ -123,11 +150,13 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 
 ```
 phone-agent/
-├── server.mjs            # 入口：认证路由 + 反向代理 + WebSocket 升级
+├── server.mjs            # 入口：认证路由 + 反向代理 + WebSocket 升级 + /shots 画廊
 ├── lib/auth.mjs          # 密码认证 + 持久 cookie + 限速
 ├── lib/proxy.mjs         # HTTP/WebSocket 转发 + dsh web 托管自愈
 ├── lib/config.mjs        # 配置加载（文件+环境变量）
 ├── web/index.html        # 手机友好登录页
+├── plugins/screen-tool/  # 屏幕监视插件（screenshot/list_windows + 技能）
+├── tests/tool-test.mjs   # screen-tool 单元级测试（fake ctx）
 ├── config.example.json   # 配置示例
 ├── web-remote.patch.yml  # dsh web 手机端补丁（目录选择器）
 └── data/                 # auth.json（密码）、运行时数据（不入库）

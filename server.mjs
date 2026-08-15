@@ -22,8 +22,8 @@
 
 import { createServer } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
-import { readFileSync, existsSync, mkdirSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import { readFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { basename, resolve, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './lib/config.mjs'
 import { createAuth, parseSessionCookie, clientIp } from './lib/auth.mjs'
@@ -64,6 +64,83 @@ function readJsonBody(req, limitBytes = 8 * 1024) {
     })
     req.on('error', rejectPromise)
   })
+}
+
+/** 截图清单：归档目录下 screen-*.png/jpg，按修改时间新→旧。 */
+function listScreenshots(dir) {
+  if (!existsSync(dir)) return []
+  const out = []
+  for (const name of readdirSync(dir)) {
+    if (!/^screen-.+\.(png|jpe?g)$/i.test(name)) continue
+    const file = join(dir, name)
+    if (!statSync(file).isFile()) continue
+    out.push({ name, size: statSync(file).size, mtime: statSync(file).mtimeMs })
+  }
+  out.sort((a, b) => b.mtime - a.mtime)
+  return out
+}
+
+/** 画廊页：手机优先，自动轮询刷新，点击看原图。 */
+function serveGallery(res, dir) {
+  const files = listScreenshots(dir)
+  const rows = files.map((f) => `
+    <a class="cell" href="/shots/${encodeURIComponent(f.name)}" target="_blank" title="${f.name}">
+      <img src="/shots/${encodeURIComponent(f.name)}?t=${Math.round(f.mtime)}" alt="${f.name}" loading="lazy">
+      <span class="meta">${f.name}<br>${(f.size / 1024).toFixed(0)} KB</span>
+    </a>`).join('\n')
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>工作机屏幕截图</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d1117; color: #e6edf3; font: 14px/1.5 system-ui, sans-serif; }
+  header { position: sticky; top: 0; background: #161b22; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #30363d; }
+  header h1 { font-size: 15px; margin: 0; flex: 1; }
+  #status { color: #8b949e; font-size: 12px; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 12px; }
+  .cell { display: block; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; text-decoration: none; color: inherit; }
+  .cell img { width: 100%; height: 130px; object-fit: cover; display: block; background: #000; }
+  .cell .meta { display: block; padding: 6px 8px; font-size: 11px; color: #8b949e; word-break: break-all; }
+  .empty { padding: 40px 16px; text-align: center; color: #8b949e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖥 工作机屏幕截图</h1>
+  <span id="status"></span>
+</header>
+<div id="grid">${rows || '<div class="empty">暂无截图。让 agent 调用 screenshot 工具，或稍后自动刷新。</div>'}</div>
+<script>
+  // 每 8 秒轮询清单，增量刷新（实时监视模式）
+  let known = ${JSON.stringify(files.map((f) => f.name))};
+  async function poll() {
+    try {
+      const r = await fetch('/shots/list.json?t=' + Date.now());
+      const data = await r.json();
+      const names = (data.files || []).map(f => f.name);
+      const status = document.getElementById('status');
+      if (status) status.textContent = names.length + ' 张 · ' + new Date().toLocaleTimeString();
+      if (names.length !== known.length || names.some((n, i) => n !== known[i])) {
+        location.reload(); // 顺序/数量变化 → 整页刷新最稳
+        return;
+      }
+    } catch (e) { /* 网络抖动忽略 */ }
+  }
+  poll();
+  setInterval(poll, 8000);
+</script>
+</body>
+</html>`
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  res.end(html)
 }
 
 async function main() {
@@ -179,6 +256,41 @@ async function main() {
         https: Boolean(config.httpsCert),
         proxy: proxy.snapshot(),
       })
+      return
+    }
+
+    // ── 屏幕截图画廊（screen-tool 插件归档目录）─────────────────────────
+    // GET /shots            → 画廊页（自动刷新）
+    // GET /shots/list.json  → 文件清单（新→旧）
+    // GET /shots/<file>     → 图片字节
+    if (req.method === 'GET' && path === '/shots') {
+      serveGallery(res, config.screenshotsDir)
+      return
+    }
+    if (req.method === 'GET' && path === '/shots/list.json') {
+      json(res, 200, { ok: true, files: listScreenshots(config.screenshotsDir) })
+      return
+    }
+    if (req.method === 'GET' && path.startsWith('/shots/')) {
+      const name = basename(decodeURIComponent(path.slice('/shots/'.length)))
+      // 只放行本插件命名的归档文件，杜绝路径穿越/任意文件读取
+      if (!/^screen-.+\.(png|jpe?g)$/i.test(name)) {
+        json(res, 404, { error: 'not found' })
+        return
+      }
+      const file = join(config.screenshotsDir, name)
+      if (file.startsWith(config.screenshotsDir + sep) && existsSync(file) && statSync(file).isFile()) {
+        const data = readFileSync(file)
+        const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+        res.writeHead(200, {
+          'Content-Type': ext === 'png' ? 'image/png' : 'image/jpeg',
+          'Content-Length': data.length,
+          'Cache-Control': 'public, max-age=3600',
+        })
+        res.end(data)
+        return
+      }
+      json(res, 404, { error: 'not found' })
       return
     }
 
