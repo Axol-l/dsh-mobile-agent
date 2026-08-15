@@ -128,6 +128,38 @@ public static class ScreenCapNative {
     return bmp;
   }
 
+  // PrintWindow：抓取窗口自身内容（即使被其他窗口遮挡）。
+  // 对硬件加速/独占全屏窗口可能返回全黑 → 调用方应回退 CaptureRect。
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+  public static Bitmap CaptureWindow(IntPtr hWnd, out bool ok) {
+    RECT r;
+    if (!GetWindowRect(hWnd, out r)) { ok = false; return null; }
+    int w = r.Right - r.Left, h = r.Bottom - r.Top;
+    if (w <= 0 || h <= 0) { ok = false; return null; }
+    var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+    using (var g = Graphics.FromImage(bmp)) {
+      IntPtr hdc = g.GetHdc();
+      bool printed = PrintWindow(hWnd, hdc, 3); // PW_RENDERFULLCONTENT
+      g.ReleaseHdc(hdc);
+      if (!printed) { bmp.Dispose(); ok = false; return null; }
+    }
+    // 内容校验：几乎全黑且无高亮 = PrintWindow 未实际渲染（如硬件加速窗口）
+    int dark = 0;
+    const int n = 200;
+    long maxV = 0;
+    var rnd = new Random(7);
+    for (int i = 0; i < n; i++) {
+      var c = bmp.GetPixel(rnd.Next(0, w), rnd.Next(0, h));
+      int v = (c.R + c.G + c.B) / 3;
+      if (v < 15) dark++;
+      if (v > maxV) maxV = v;
+    }
+    if (dark > n * 0.99 && maxV < 20) { bmp.Dispose(); ok = false; return null; }
+    ok = true;
+    return bmp;
+  }
+
   private static ImageCodecInfo GetEncoder(ImageFormat fmt) {
     foreach (ImageCodecInfo codec in ImageCodecInfo.GetImageEncoders()) {
       if (codec.FormatID == fmt.Guid) return codec;
@@ -270,7 +302,22 @@ try {
     exit 4
   }
 
-  $bmp = [ScreenCapNative]::CaptureRect($x, $y, $w, $h)
+  $bmp = $null
+  $capMethod = 'screen-region'
+  if ($source -eq 'window') {
+    # PrintWindow 抓窗口自身内容（被遮挡也正确）；失败（硬件加速/全屏等）回退屏幕区域
+    $okFlag = $false
+    $bmp = [ScreenCapNative]::CaptureWindow($hPtr, [ref]$okFlag)
+    if ($okFlag) {
+      $capMethod = 'print-window'
+    } else {
+      $rect2 = New-Object ScreenCapNative+RECT
+      [void][ScreenCapNative]::GetWindowRect($hPtr, [ref]$rect2)
+      $bmp = [ScreenCapNative]::CaptureRect($rect2.Left, $rect2.Top, $rect2.Right - $rect2.Left, $rect2.Bottom - $rect2.Top)
+    }
+  } else {
+    $bmp = [ScreenCapNative]::CaptureRect($x, $y, $w, $h)
+  }
   $dims = [ScreenCapNative]::Save($bmp, $OutFile, [bool]$Jpeg, $JpegQuality, $MaxDimension)
 
   $fi = Get-Item $OutFile
@@ -283,6 +330,7 @@ try {
     width   = $dims[0]
     height  = $dims[1]
     bytes   = $fi.Length
+    method  = $capMethod
   })
   exit 0
 } catch {
