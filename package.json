@@ -1,0 +1,13 @@
+{
+  "name": "phone-agent",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "DeepSeek Harness 手机访问网关：密码认证（记住我）+ 反向代理到本机 dsh web，手机浏览器获得与桌面端完全一致的原版界面。运行时零 npm 依赖。",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  }
+}

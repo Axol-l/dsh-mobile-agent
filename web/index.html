@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6f8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101214">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E">
+<title>DeepSeek Harness</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1c1e21; --muted: #8a919c;
+    --accent: #2f6fed; --accent-text: #ffffff; --border: #e3e6ea;
+    --danger: #d93025; --radius: 14px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101214; --panel: #1a1d21; --text: #e8eaed; --muted: #9aa0a6;
+      --border: #2d3137; --accent: #3d7bf3;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    /* 刘海屏/全面屏安全区 */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .card {
+    width: 100%; max-width: 380px; margin: 24px; padding: 32px 28px;
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .logo { font-size: 44px; text-align: center; }
+  .title { font-size: 21px; font-weight: 700; text-align: center; }
+  .sub { color: var(--muted); font-size: 13px; text-align: center; line-height: 1.6; }
+  form { display: flex; flex-direction: column; gap: 14px; }
+  .pw-wrap { position: relative; }
+  input[type="password"], input[type="text"] {
+    padding: 14px 48px 14px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--bg); font-size: 16px; width: 100%; color: var(--text);
+    /* 16px 字号避免 iOS 聚焦自动缩放 */
+  }
+  input[type="password"]:focus, input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .toggle {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 38px; height: 38px; border: none; background: transparent;
+    font-size: 18px; line-height: 1; cursor: pointer; border-radius: 8px;
+    color: var(--muted); display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .toggle:active { background: var(--border); }
+  .row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); user-select: none; }
+  .row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+  button[type="submit"] {
+    padding: 14px; border-radius: var(--radius); background: var(--accent); color: var(--accent-text);
+    font-size: 16px; font-weight: 600; border: none; cursor: pointer;
+    transition: opacity .15s;
+  }
+  button[type="submit"]:disabled { opacity: .5; cursor: not-allowed; }
+  .error { color: var(--danger); font-size: 14px; min-height: 20px; text-align: center; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🤖</div>
+  <div class="title">DeepSeek Harness</div>
+  <div class="sub">输入访问密码，连接到本机的 agent 服务<br><span id="host"></span></div>
+  <form id="login-form">
+    <div class="pw-wrap">
+      <input type="password" id="password" placeholder="访问密码" autocomplete="current-password"
+             autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" required autofocus>
+      <button type="button" id="toggle" class="toggle" aria-label="显示密码" aria-pressed="false">👁</button>
+    </div>
+    <label class="row"><input type="checkbox" id="remember" checked> 记住我（30 天内免登录）</label>
+    <button type="submit" id="submit">进入</button>
+  </form>
+  <div class="error" id="error" role="status" aria-live="polite">__LOGIN_ERROR__</div>
+  <div class="hint">登录后即本机 DeepSeek Harness 完整界面</div>
+</div>
+<script>
+'use strict';
+document.getElementById('host').textContent = location.host;
+
+const form = document.getElementById('login-form');
+const password = document.getElementById('password');
+const submit = document.getElementById('submit');
+const errorEl = document.getElementById('error');
+const toggle = document.getElementById('toggle');
+const submitLabel = submit.textContent;
+
+// 密码可见性切换（移动端输入长密码更友好）
+toggle.addEventListener('click', () => {
+  const show = password.type === 'password';
+  password.type = show ? 'text' : 'password';
+  toggle.setAttribute('aria-pressed', String(show));
+  toggle.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+  toggle.textContent = show ? '🙈' : '👁';
+  password.focus();
+});
+
+// 输入即清除错误提示
+password.addEventListener('input', () => {
+  if (errorEl.textContent) errorEl.textContent = '';
+});
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorEl.textContent = '';
+  submit.disabled = true;
+  submit.textContent = '进入中…';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        password: password.value,
+        remember: document.getElementById('remember').checked,
+      }),
+    });
+    if (res.status === 429) { errorEl.textContent = '尝试过于频繁，请稍后再试'; return; }
+    if (res.status === 401) { errorEl.textContent = '密码错误'; password.select(); return; }
+    if (!res.ok) { errorEl.textContent = '登录失败，请重试'; return; }
+    location.href = '/'; // 已认证 → 进入 dsh web
+  } catch {
+    errorEl.textContent = '无法连接服务端';
+  } finally {
+    submit.disabled = false;
+    submit.textContent = submitLabel;
+  }
+});
+</script>
+</body>
+</html>
