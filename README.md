@@ -1,15 +1,18 @@
-# phone-agent — DeepSeek Harness 手机访问网关
+# dsh-phone-agent — DeepSeek Harness 手机访问网关
+
+> **English:** [README.en.md](README.en.md)
 
 手机浏览器登录后获得与桌面端**完全一致**的 DeepSeek Harness 原版界面与全部功能
 （会话、工具调用、审批、设置等），并支持**持久登录**：勾选「记住我」后 30 天
 免登录，刷新页面、重启浏览器都不再重输密码。
+⚠ 整个项目由DeepSeek-V4-Flash 自行编写，注意鉴别潜在安全隐患。
 
 ## 架构
 
 ```
-┌──────────┐  HTTP + WebSocket  ┌───────────────────────┐   反向代理    ┌────────────────────┐
-│  手机浏览器 │ ─────────────────▶ │  phone-agent 认证网关   │ ────────────▶ │  dsh web (原版 GUI)  │
-│ (登录页+GUI)│  密码登录/记住我    │ (server.mjs, 零依赖)    │  改写 Host/Origin │  127.0.0.1:3080     │
+┌──────────┐  HTTP + WebSocket  ┌───────────────────────┐   反向代理      ┌────────────────────┐
+│手机浏览器 │ ─────────────────▶│  phone-agent 认证网关  │────────────▶  │  dsh web (原版 GUI) │
+│登录页+GUI│  密码登录/记住我     │ (server.mjs, 零依赖)   │改写 Host/Origin│  127.0.0.1:3080    │
 └──────────┘  cookie 持久会话    └───────────────────────┘                └────────────────────┘
 ```
 
@@ -17,7 +20,7 @@
   只接受 loopback 访问（`--host 0.0.0.0` 被有意不支持）。因此 dsh web 始终监听
   127.0.0.1，由 phone-agent 在外部承担认证，并把请求转发进去（改写 Host/Origin
   为 loopback authority 以满足 fence）。
-- **前端**：就是 dsh web 原版单页（`window.__DSH_BOOT__` 注入），UI 与功能 100%
+- **前端**：就是 dsh web 原版单页，UI 与功能 100%
   一致，无任何自研替代界面。
 - **通道**：HTTP（含任意大小请求体，流式转发）+ WebSocket 升级
   （dsh web 的 `/api/events.mux` 与 `/api/events.host` 下行流）。
@@ -52,16 +55,12 @@ node server.mjs
 |---|---|---|
 | 同一 WiFi / 手机热点 | `http://<电脑局域网IP>:8080` | 最简单，仅限局域网 |
 | 异地远程（推荐） | `http://<Tailscale IP>:8080` | Tailscale 组网，免费、加密、无需公网 IP |
-| 公网访问 | cloudflared / ngrok 隧道 | 见「公网访问模式」，务必 HTTPS + 强密码 |
-
-> **校园网提示**：校园网普遍启用 AP 隔离，手机与电脑互访常不可行。
-> 可靠替代：手机开热点让电脑连接，或使用 Tailscale 组网。
 
 ### 4. 登出
 
 在界面中登出，或清空浏览器 cookie，会话即失效。
 
-## 手机端适配（两项自动修复）
+## 手机端适配
 
 1. **`crypto.randomUUID` 缺失**：手机浏览器经 HTTP 局域网访问属于非安全上下文，
    `crypto.randomUUID` 不被暴露，dsh web 前端（附件草稿等）会报
@@ -73,10 +72,7 @@ node server.mjs
    `web-remote.patch.yml`（禁用 auto、挂 browse 后端：RPC 目录树浏览，
    任何浏览器可用）。
 
-> 手动启动 dsh web 时请带上同一补丁：
-> `node --import tsx/esm apps/cli/src/bin.ts web --patch <phone-agent 项目目录>\web-remote.patch.yml`
-
-## 托管模式（可选）
+## 托管模式
 
 `manageWeb: true`（默认）时，若目标 dsh web 不可达，网关会自动从同级
 deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发失败自愈）。
@@ -91,19 +87,6 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 | 网络 | 默认监听 `0.0.0.0`（局域网）；公网使用必须启用 HTTPS（见下） |
 | 转发 | 仅认证后的请求转发到本机 dsh web；WebSocket 升级同样要求认证 |
 | 密钥 | 密码持久化于 `data/auth.json`（0600），日志不打印密码 |
-
-## 公网访问模式（可选）
-
-1. 准备证书与私钥（自签或反向代理终结 TLS）。
-2. 配置 `httpsCert` / `httpsKey`（或 `DSH_PHONE_AGENT_HTTPS_CERT/KEY`），
-   服务即以 HTTPS 监听。
-3. 用内网穿透（frp / cloudflared / ngrok 等）映射到公网域名。
-
-```sh
-cloudflared tunnel --url https://127.0.0.1:8080
-```
-
-公网暴露时请务必：**强密码、HTTPS、仅对可信域名开放**。
 
 ## 配置
 
