@@ -211,6 +211,7 @@ try {
       EmitJson ([ordered]@{ ok = $false; error = "invalid hwnd: $Hwnd" })
       exit 2
     }
+    $source = 'window'
   } elseif ($Window) {
     $all = [ScreenCapNative]::ListWindows()
     # 大小写不敏感的子串匹配（不能用 -like：标题里的通配符会破坏匹配）
@@ -246,6 +247,7 @@ try {
 
   if ($source -eq 'window') {
     $hPtr = [IntPtr]$hwndVal
+    if ($title -eq '') { $title = [ScreenCapNative]::TitleOf($hPtr) }
     $rect = New-Object ScreenCapNative+RECT
     if (-not [ScreenCapNative]::GetWindowRect($hPtr, [ref]$rect)) {
       EmitJson ([ordered]@{ ok = $false; error = "GetWindowRect failed for hwnd $hwndVal (window may have closed)" })
