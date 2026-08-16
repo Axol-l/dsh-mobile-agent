@@ -8,6 +8,9 @@ tests/
 data/
 workspace/
 
+# portable ffmpeg（~90MB 二进制，不入库；tools/ffmpeg/README.md 说明获取方式）
+tools/
+
 # 本地真实配置（含密码等敏感字段；只提交 config.example.json 模板）
 config.json
 .env

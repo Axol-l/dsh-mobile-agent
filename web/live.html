@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>工作机直播</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --dim: #484f58;
+    --accent: #3964fe; --accent-hover: #5575ff; --accent-fg: #fff;
+    --danger: #f85149; --ok: #3fb950;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+            "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 var(--font); }
+  header { position: sticky; top: 0; z-index: 10; background: var(--panel); padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); }
+  header .pa-title-icn { width: 17px; height: 17px; color: var(--accent); flex: none; }
+  header h1 { font-size: 14px; margin: 0; flex: 1; font-weight: 600; white-space: nowrap; }
+  #status { color: var(--muted); font-size: 12px; }
+
+  /* ── 页面切换图标（dsh 风格：幽灵图标按钮） ── */
+  .pa-nav { display: inline-flex; gap: 2px; align-items: center; }
+  .pa-icn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+    border: 0; background: none; color: var(--muted); border-radius: 8px; cursor: pointer; padding: 0;
+    transition: background .15s, color .15s; }
+  .pa-icn svg { width: 17px; height: 17px; }
+  .pa-icn:hover { background: #21262d; color: var(--fg); }
+
+  /* ── 控制条（dsh 风格图标按钮） ── */
+  #controls { display: flex; gap: 8px; padding: 10px 14px 0; align-items: center; }
+  .ctl { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
+    background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+    border-radius: var(--radius); font: 500 13px var(--font); cursor: pointer; user-select: none;
+    transition: background .15s, color .15s, border-color .15s; }
+  .ctl svg { width: 16px; height: 16px; }
+  .ctl:hover { background: #1c2128; color: var(--fg); }
+  .ctl.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .ctl.active:hover { background: var(--accent-hover); }
+  #live-tag { margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 6px rgba(63,185,80,.6); }
+
+  /* ── 显示区（提示不遮挡画面：空态居中文字，有流时只有角落徽标） ── */
+  #stage { position: relative; margin: 10px 14px; min-height: 240px; background: #000;
+    border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+    display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; max-width: 100%; max-height: 68vh; }
+  #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 8px; color: var(--dim); text-align: center; padding: 20px; }
+  #empty.hidden { display: none; }
+  #empty .big { width: 34px; height: 34px; opacity: .7; }
+  #badge { position: absolute; top: 8px; left: 8px; display: none; align-items: center; gap: 6px;
+    padding: 4px 9px; background: rgba(13,17,23,.82); border: 1px solid var(--border);
+    border-radius: 999px; font-size: 11px; color: var(--fg); backdrop-filter: blur(4px); }
+  #badge.show { display: inline-flex; }
+
+  #errbar { display: none; margin: 0 14px 10px; padding: 8px 12px;
+    background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.5);
+    color: #ffa198; border-radius: var(--radius); font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  #errbar.show { display: block; }
+
+  footer { padding: 0 14px 18px; color: var(--muted); font-size: 12px; }
+  footer .row { margin-bottom: 4px; }
+  footer .dim { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <svg class="pa-title-icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+  <h1>工作机直播</h1>
+  <nav class="pa-nav">
+    <button class="pa-icn" data-href="/" title="回到主界面">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </button>
+    <button class="pa-icn" data-href="/shots" title="历史截图">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+    </button>
+  </nav>
+  <span id="status"></span>
+</header>
+
+<div id="controls">
+  <button id="btn-screen" class="ctl" title="开启/关闭屏幕直播">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <span>屏幕</span>
+  </button>
+  <button id="btn-cam" class="ctl" title="开启/关闭摄像头">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    <span>摄像头</span>
+  </button>
+  <span id="live-tag"><span class="dot" id="live-dot"></span><span id="live-text">未开启</span></span>
+</div>
+
+<div id="errbar"></div>
+
+<div id="stage">
+  <canvas id="view" width="640" height="360"></canvas>
+  <div id="empty">
+    <svg class="big" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <div>屏幕与摄像头均未开启</div>
+    <div class="dim">点击上方「屏幕」或「摄像头」按钮开始直播</div>
+  </div>
+  <span id="badge"><span class="dot on"></span><span id="badge-text">屏幕</span></span>
+</div>
+
+<footer>
+  <div class="row">客户端帧率：<span id="fps">-</span> fps · 分辨率：<span id="res">-</span></div>
+  <div class="row dim">延迟取决于网络：同 WiFi 下通常 &lt; 1s。摄像头需手动开启；无人观看时服务端自动停止抓取。</div>
+  <div id="devices" class="dim"></div>
+</footer>
+
+<script>
+'use strict';
+
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+const errbar = document.getElementById('errbar');
+const emptyEl = document.getElementById('empty');
+const badgeEl = document.getElementById('badge');
+const badgeText = document.getElementById('badge-text');
+const btnScreen = document.getElementById('btn-screen');
+const btnCam = document.getElementById('btn-cam');
+const liveDot = document.getElementById('live-dot');
+const liveText = document.getElementById('live-text');
+const fpsEl = document.getElementById('fps');
+const resEl = document.getElementById('res');
+const devicesEl = document.getElementById('devices');
+
+// 页面切换图标：data-href 导航（与 dsh 内导航一致：新标签优先，被拦截则当前标签）
+document.querySelectorAll('.pa-icn[data-href]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const href = btn.getAttribute('data-href');
+    const w = window.open(href, '_blank');
+    if (w === null) window.location.href = href;
+  });
+});
+
+// ── JPEG 帧流播放器（fetch + createImageBitmap，兼容 iOS Safari） ──
+class JpegPlayer {
+  constructor(canvas) { this.canvas = canvas; this.reading = false; this.reader = null; }
+  async play(url, label) {
+    this.stop();
+    this.reading = true;
+    this.label = label;
+    let res;
+    try { res = await fetch(url, { credentials: 'same-origin' }); }
+    catch (e) { this._fail('无法连接服务器：' + e.message); return; }
+    if (res.status === 401) { this._fail('未登录或会话已过期，请刷新页面重新登录'); return; }
+    if (!res.ok || !res.body) { this._fail('HTTP ' + res.status); return; }
+    const reader = res.body.getReader();
+    this.reader = reader;
+    let buf = new Uint8Array(0);
+    let fpsWindow = [];
+    while (this.reading) {
+      let chunk;
+      try { chunk = await reader.read(); } catch { break; }
+      if (chunk.done) break;
+      buf = concat(buf, chunk.value);
+      if (buf.length > 24 * 1024 * 1024) buf = buf.subarray(buf.length - 8 * 1024 * 1024);
+      let consumed = 0;
+      while (this.reading) {
+        const start = findMarker(buf, consumed, 0xFF, 0xD8);
+        if (start < 0) { consumed = buf.length; break; }
+        const end = findMarker(buf, start + 2, 0xFF, 0xD9);
+        if (end < 0) { consumed = start; break; }
+        const frame = buf.slice(start, end + 2);
+        consumed = end + 2;
+        this._render(frame).catch(() => {});
+        fpsWindow.push(performance.now());
+      }
+      buf = buf.subarray(consumed);
+      fpsWindow = fpsWindow.filter(t => performance.now() - t < 1000);
+      if (this.reading) fpsEl.textContent = fpsWindow.length;
+    }
+    this.reader = null;
+    // 非主动停止（stop 未调用）而流结束/报错 → 提示断开
+    if (this.reading) {
+      this.reading = false;
+      showError(this.label === 'cam' ? '摄像头直播已断开，请重新开启' : '屏幕直播已断开，请重新开启');
+    }
+  }
+  async _render(frame) {
+    const blob = new Blob([frame], { type: 'image/jpeg' });
+    let bmp;
+    if (window.createImageBitmap) bmp = await createImageBitmap(blob);
+    else bmp = await loadImage(blob);
+    if (!this.reading) return;
+    if (bmp.width !== this.canvas.width || bmp.height !== this.canvas.height) {
+      this.canvas.width = bmp.width; this.canvas.height = bmp.height;
+      resEl.textContent = bmp.width + '×' + bmp.height;
+    }
+    ctx.drawImage(bmp, 0, 0, this.canvas.width, this.canvas.height);
+    if (bmp.close) bmp.close();
+  }
+  stop() {
+    this.reading = false;
+    if (this.reader) { try { this.reader.cancel(); } catch { /* 已关闭 */ } this.reader = null; }
+  }
+  _fail(msg) { showError(msg); }
+}
+
+function loadImage(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+    img.src = url;
+  });
+}
+function concat(a, b) {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0); out.set(b, a.length);
+  return out;
+}
+function findMarker(buf, from, m1, m2) {
+  for (let i = from; i < buf.length - 1; i++) {
+    if (buf[i] === m1 && buf[i + 1] === m2) return i;
+  }
+  return -1;
+}
+
+function showError(msg) {
+  errbar.textContent = msg;
+  errbar.classList.add('show');
+}
+function clearError() { errbar.classList.remove('show'); }
+
+// ── 开关状态（默认全关；点开才起流，同一时刻只跑一路） ──
+const screenPlayer = new JpegPlayer(canvas);
+const camPlayer = new JpegPlayer(canvas);
+let screenOn = false, camOn = false;
+
+function renderUI() {
+  btnScreen.classList.toggle('active', screenOn);
+  btnCam.classList.toggle('active', camOn);
+  btnScreen.querySelector('span').textContent = screenOn ? '停止' : '屏幕';
+  btnCam.querySelector('span').textContent = camOn ? '停止' : '摄像头';
+  const any = screenOn || camOn;
+  emptyEl.classList.toggle('hidden', any);
+  badgeEl.classList.toggle('show', any);
+  if (any) {
+    badgeText.textContent = camOn ? '摄像头' : '屏幕';
+    liveDot.className = 'dot on';
+    liveText.textContent = camOn ? '摄像头直播中' : '屏幕直播中';
+  } else {
+    liveDot.className = 'dot';
+    liveText.textContent = '未开启';
+  }
+}
+
+btnScreen.addEventListener('click', () => {
+  clearError();
+  if (screenOn) {
+    screenPlayer.stop(); screenOn = false;
+  } else {
+    screenOn = true;
+    camPlayer.stop(); camOn = false;
+    screenPlayer.play('/live/screen.mjpg', 'screen');
+  }
+  renderUI();
+});
+
+btnCam.addEventListener('click', () => {
+  clearError();
+  if (camOn) {
+    camPlayer.stop(); camOn = false;
+  } else {
+    camOn = true;
+    screenPlayer.stop(); screenOn = false;
+    camPlayer.play('/live/cam.mjpg', 'cam');
+  }
+  renderUI();
+});
+
+renderUI();
+
+// ── 服务端状态轮询（订阅数/进程/设备/错误） ──
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/live/status', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (camOn && s.camera && s.camera.error) showError('摄像头：' + s.camera.error);
+    if (s.ffmpeg && !document.getElementById('ffmpeg-note')) {
+      const div = document.createElement('div');
+      div.id = 'ffmpeg-note';
+      div.textContent = 'ffmpeg: ' + s.ffmpeg;
+      devicesEl.appendChild(div);
+    }
+  } catch (e) { /* 网络抖动忽略 */ }
+}
+pollStatus();
+setInterval(pollStatus, 4000);
+
+// 设备清单（仅供信息）
+fetch('/api/live/devices', { credentials: 'same-origin' })
+  .then(r => r.json())
+  .then(d => {
+    const vids = (d.devices || []).filter(x => x.type === 'video');
+    if (vids.length) devicesEl.textContent = '摄像头：' + vids.map(x => x.name).join('、');
+  })
+  .catch(() => {});
+
+window.addEventListener('pagehide', () => {
+  screenPlayer.stop();
+  camPlayer.stop();
+});
+</script>
+</body>
+</html>

@@ -4,7 +4,9 @@
 # 依赖浏览器 File System Access API（showDirectoryPicker），手机浏览器
 # 不支持 → 手机端无法选择本机工作区。
 #
-# 修复：禁用 auto，挂 browse 后端（RPC 目录树浏览，任何浏览器可用）。
+# 修复：禁用 auto，成对挂载 browse 后端 + browse 客户端 surface
+# （与 auto 自身的挂载方式一致：一个后端 + 一个 client 面），
+# browse 走 RPC 目录树浏览，任何浏览器可用。
 # 用法：node --import tsx/esm apps/cli/src/bin.ts web --patch <本文件>
 
 - id: directory-picker
@@ -14,3 +16,6 @@
 - insert:
     - id: directory-picker-browse
       name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+    - id: directory-picker-browse-surface
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

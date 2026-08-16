@@ -95,6 +95,39 @@ node server.mjs
 | 看某个窗口 | 「看看 Chrome 窗口 / 列出窗口」 |
 | 直接看画面 |  浏览器打开 `http://<电脑IP>:8080/shots` |
 
+## 实时直播（屏幕 + 摄像头）
+
+`lib/stream/` 是独立直播模块（`config.live` 开关，禁用即 no-op）：
+手机浏览器打开 **`http://<电脑IP>:8080/live`** 即可**实时**观看工作机屏幕
+（MJPEG 帧流，同 WiFi 延迟通常 <1s），并可**手动开启工作机摄像头**
+（默认全关，点按钮才起流，隐私保护）。
+
+- **控制方式**：直播页顶部图标按钮（dsh 风格 SVG）——「屏幕」「摄像头」
+  各自开关，**默认全关、点开才起流**，同一时刻只跑一路；未开启的提示
+  不遮挡画面（空态居中文字，有流时仅角落小徽标）；
+- **主界面悬浮窗**：dsh 主页面右下角「屏幕监视」小窗新增 🖥 图标，
+  点击即在角落 PiP 实时播放屏幕流（再点停止），直播模块禁用时图标自动隐藏；
+- **按需启停**：服务端按订阅者自动启停 ffmpeg（无人看 3s 后停止，
+  多手机共享一份抓帧）；
+- **摄像头流**：ffmpeg `dshow` 抓摄像头，`device: "auto"` 自动枚举第一个
+  视频设备，两档重试（配置分辨率 → 失败降原生档，兼容仅支持固定
+  分辨率/帧率的摄像头）；
+- **前置**：portable ffmpeg 放 `tools/ffmpeg/bin/ffmpeg.exe`
+  （`node scripts/download-ffmpeg.mjs` 自动下载，或手动解压静态构建）；
+- **配置**：`config.json` 的 `live` 段（帧率/分辨率/质量/设备名）；
+- 详见 `lib/stream/README.md`。直播与 `/shots` 截图画廊并存：直播看实时，
+  画廊看历史。
+
+### 使用方法
+
+| 你想做什么 | 操作 |
+|---|---|
+| 实时看屏幕 | 手机浏览器打开 `http://<电脑IP>:8080/live`（登录后），点「屏幕」按钮 |
+| 看摄像头 | 直播页点「摄像头」按钮（页面默认不自动开） |
+| 在主界面看直播 | dsh 页面右下角悬浮窗点 🖥 图标（角落 PiP） |
+| 调整帧率/分辨率 | 改 `config.json` 的 `live` 段后重启网关 |
+| 禁用直播 | `config.live.enabled: false` 或环境变量 `DSH_PHONE_AGENT_LIVE=0` |
+
 ## 托管模式
 
 `manageWeb: true`（默认）时，若目标 dsh web 不可达，网关会自动从同级
@@ -126,6 +159,7 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 | `DSH_PHONE_AGENT_SESSION_DAYS` | 30 | 「记住我」有效期（天） |
 | `DSH_PHONE_AGENT_HTTPS_CERT/KEY` | — | HTTPS 证书与私钥路径 |
 | `DSH_PHONE_AGENT_SCREENSHOTS_DIR` | `<DSH_HOME>/screenshots` | 截图归档目录（/shots 画廊读取处） |
+| `DSH_PHONE_AGENT_LIVE` | true | 直播模块总开关（`0` 禁用） |
 | `DSH_HARNESS_ROOT` | ../deepseek-harness | 托管模式定位 deepseek-harness 检出 |
 
 ## 可靠性设计
@@ -148,13 +182,16 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 
 ```
 phone-agent/
-├── server.mjs            # 入口：认证路由 + 反向代理 + WebSocket 升级 + /shots 画廊
+├── server.mjs            # 入口：认证路由 + 反向代理 + WebSocket 升级 + /shots 画廊 + /live 直播
 ├── lib/auth.mjs          # 密码认证 + 持久 cookie + 限速
 ├── lib/proxy.mjs         # HTTP/WebSocket 转发 + dsh web 托管自愈
 ├── lib/config.mjs        # 配置加载（文件+环境变量）
+├── lib/stream/           # 直播模块（屏幕/摄像头 MJPEG 帧流，config.live 开关）
 ├── web/index.html        # 手机友好登录页
+├── web/live.html         # 直播页（fetch+canvas，兼容 iOS Safari）
 ├── plugins/screen-tool/  # 屏幕监视插件（screenshot/list_windows + 技能）
 ├── tests/tool-test.mjs   # screen-tool 单元级测试（fake ctx）
+├── tests/stream-test.mjs # lib/stream 纯逻辑单测
 ├── config.example.json   # 配置示例
 ├── web-remote.patch.yml  # dsh web 手机端补丁（目录选择器）
 └── data/                 # auth.json（密码）、运行时数据（不入库）
@@ -254,6 +291,21 @@ automatically spawns one from the sibling deepseek-harness checkout (crash-resta
 self-healing on forwarding failures). It won't double-start if a manual instance exists.
 Change the port with the `target` option.
 
+## Live streaming (screen + webcam)
+
+`lib/stream/` is a self-contained live module (toggled by `config.live`). Open
+`http://<pc-ip>:8080/live` in your phone browser to watch the work machine **in real time**
+(MJPEG frame stream, typically <1s latency on the same Wi-Fi) and to **enable the webcam**
+via the page button (off by default for privacy).
+
+- Screen: ffmpeg `gdigrab` → starts when a viewer connects, auto-stops 3s after the last one
+  leaves; multiple viewers share a single capture process.
+- Webcam: ffmpeg `dshow`, `device: "auto"` picks the first video device; auto-falls back to
+  640×480@10 on failure.
+- Prerequisite: portable ffmpeg at `tools/ffmpeg/bin/ffmpeg.exe`
+  (`node scripts/download-ffmpeg.mjs`, or drop a static build there manually).
+- See `lib/stream/README.md` for details.
+
 ## Security model
 
 | Layer | Measure |
@@ -320,7 +372,9 @@ phone-agent/
 ├── lib/auth.mjs          # Password auth + persistent cookie + rate limit
 ├── lib/proxy.mjs         # HTTP/WebSocket forwarding + dsh web managed self-healing
 ├── lib/config.mjs        # Config loading (file + env vars)
+├── lib/stream/           # Live module (screen/webcam MJPEG streams; config.live toggle)
 ├── web/index.html        # Mobile-friendly login page
+├── web/live.html         # Live page (fetch + canvas, iOS Safari compatible)
 ├── config.example.json   # Example config
 ├── web-remote.patch.yml  # dsh web mobile patch (directory picker)
 └── data/                 # auth.json (password), runtime data (not committed)

@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url'
 import { loadConfig } from './lib/config.mjs'
 import { createAuth, parseSessionCookie, clientIp } from './lib/auth.mjs'
 import { createProxy } from './lib/proxy.mjs'
+import { createLiveModule } from './lib/stream/index.mjs'
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)))
 const LOGIN_HTML = resolve(PROJECT_ROOT, 'web', 'index.html')
@@ -97,10 +98,17 @@ function serveGallery(res, dir) {
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #0d1117; color: #e6edf3; font: 14px/1.5 system-ui, sans-serif; }
-  header { position: sticky; top: 0; background: #161b22; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #30363d; }
-  header h1 { font-size: 15px; margin: 0; flex: 1; }
+  body { margin: 0; background: #0d1117; color: #e6edf3; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  header { position: sticky; top: 0; background: #161b22; padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #30363d; }
+  header .pa-title-icn { width: 17px; height: 17px; color: #3964fe; flex: none; }
+  header h1 { font-size: 14px; margin: 0; flex: 1; font-weight: 600; white-space: nowrap; }
   #status { color: #8b949e; font-size: 12px; }
+  .pa-nav { display: inline-flex; gap: 2px; align-items: center; }
+  .pa-icn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+    border: 0; background: none; color: #8b949e; border-radius: 8px; cursor: pointer; padding: 0;
+    transition: background .15s, color .15s; }
+  .pa-icn svg { width: 17px; height: 17px; }
+  .pa-icn:hover { background: #21262d; color: #e6edf3; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 12px; }
   .cell { display: block; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; text-decoration: none; color: inherit; }
   .cell img { width: 100%; height: 130px; object-fit: cover; display: block; background: #000; }
@@ -110,11 +118,28 @@ function serveGallery(res, dir) {
 </head>
 <body>
 <header>
-  <h1>🖥 工作机屏幕截图</h1>
+  <svg class="pa-title-icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+  <h1>工作机屏幕截图</h1>
+  <nav class="pa-nav">
+    <button class="pa-icn" data-href="/" title="回到主界面">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </button>
+    <button class="pa-icn" data-href="/live" title="实时直播">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </button>
+  </nav>
   <span id="status"></span>
 </header>
 <div id="grid">${rows || '<div class="empty">暂无截图。让 agent 调用 screenshot 工具，或稍后自动刷新。</div>'}</div>
 <script>
+  // 页面切换图标：data-href 导航（新标签优先，被拦截则当前标签）
+  document.querySelectorAll('.pa-icn[data-href]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var href = btn.getAttribute('data-href');
+      var w = window.open(href, '_blank');
+      if (w === null) window.location.href = href;
+    });
+  });
   // 每 8 秒轮询清单，增量刷新（实时监视模式）
   let known = ${JSON.stringify(files.map((f) => f.name))};
   async function poll() {
@@ -155,6 +180,11 @@ async function main() {
   })
   const proxy = createProxy(config, {
     onLog: (level, message) => console.log(`[web] ${message}`),
+  })
+
+  // 直播模块（屏幕/摄像头 MJPEG 帧流；config.live.enabled=false 时为 no-op）
+  const live = createLiveModule(config, {
+    onLog: (level, message) => console.log(message),
   })
 
   /** 认证中间件：失败 401。 */
@@ -294,6 +324,14 @@ async function main() {
       return
     }
 
+    // ── 直播（lib/stream 模块：屏幕/摄像头 MJPEG 帧流）─────────────────
+    // GET /live              → 直播页
+    // GET /live/screen.mjpg  → 屏幕流（multipart/x-mixed-replace）
+    // GET /live/cam.mjpg     → 摄像头流（点"开启摄像头"才拉流）
+    // GET /api/live/devices  → 设备清单
+    // GET /api/live/status   → 运行状态
+    if (live.handle(req, res, { json })) return
+
     // 其余全部转发给 dsh web（含 /、静态资源、/api RPC）
     proxy.forward(req, res, clientIp(req))
   }
@@ -356,6 +394,7 @@ async function main() {
   const shutdown = async (signal) => {
     console.log(`\n[phone-agent] 收到 ${signal}，正在关闭…`)
     try {
+      await live.shutdown()
       await proxy.shutdown()
       server.close()
     } finally {

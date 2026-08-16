@@ -8,7 +8,13 @@
   "httpsCert": "",
   "httpsKey": "",
   "dataDir": "./data",
-  "screenshotsDir": "", 
+  "screenshotsDir": "",
   "sessionDays": 30,
-  "loginWindowMs": 60000
+  "loginWindowMs": 60000,
+  "live": {
+    "enabled": true,
+    "ffmpegPath": "tools/ffmpeg/bin/ffmpeg.exe",
+    "screen": { "fps": 5, "width": 1280, "quality": 5 },
+    "camera": { "device": "auto", "fps": 10, "width": 640, "quality": 5 }
+  }
 }
