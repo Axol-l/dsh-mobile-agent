@@ -1,10 +1,10 @@
-# dsh-phone-agent — DeepSeek Harness 手机访问网关
+# dsh-mobile-agent — DeepSeek Harness 手机访问DeepSeek Harness
 
 
 手机浏览器登录后获得与桌面端**完全一致**的 DeepSeek Harness 原版界面与全部功能
 （会话、工具调用、审批、设置等），并支持**持久登录**：勾选「记住我」后 30 天
 免登录，刷新页面、重启浏览器都不再重输密码。
-⚠ 整个项目由DeepSeek-V4-Flash 自行编写，注意鉴别潜在安全隐患。
+⚠ 整个项目由DeepSeek-V4 自行编写，注意鉴别潜在安全隐患。
 
 ## 架构
 
@@ -93,11 +93,7 @@ node server.mjs
 |---|---|
 | 看整个屏幕 | 「截个图看看屏幕」 |
 | 看某个窗口 | 「看看 Chrome 窗口 / 列出窗口」 |
-| 持续监视 | 「每 30 秒截一张图」（agent 循环调用，画廊自动刷新） |
-| 直接看画面 | 手机浏览器打开 `http://<电脑IP>:8080/shots`（无需经过对话）；页面右下角悬浮窗自动显示最新截图，点击看大图 |
-
-文本模型下对话中不会出现图片块（模型无法承载），画面一律走 `/shots`
-画廊；图片模型下对话直接可见。
+| 直接看画面 |  浏览器打开 `http://<电脑IP>:8080/shots` |
 
 ## 托管模式
 
@@ -134,7 +130,7 @@ deepseek-harness 检出启动一个 dsh web 实例（崩溃自动重启、转发
 
 ## 可靠性设计
 
-- **转发自愈**：目标不可达 → 502 明确提示；托管模式自动拉起 dsh web
+- **转发自愈**：目标不可达 → 托管模式自动拉起 dsh web
   （探测就绪 + 崩溃重启 + 转发失败触发自愈）。
 - **WebSocket 透传**：upgrade 请求双向管道，无应用层缓冲，下行流不断流。
 - **优雅退出**：SIGINT/SIGTERM → 停止托管子进程 → 关闭监听。
@@ -166,15 +162,13 @@ phone-agent/
 
 ---
 
-# dsh-phone-agent — Mobile Access Gateway for DeepSeek Harness
+# dsh-mobile-agent — Mobile Access Gateway for DeepSeek Harness
 
 
 Log in from your phone's browser to get the **exact same** DeepSeek Harness UI and all its
 features as on desktop (sessions, tool calls, approvals, settings, etc.), with **persistent
 login**: check "Remember me" and you stay logged in for 30 days — refreshing the page or
 restarting the browser won't ask for the password again.
-
-> **中文版:** [README.md](README.md)
 
 ## Architecture
 
