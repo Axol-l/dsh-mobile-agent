@@ -1,5 +1,6 @@
 # dsh-mobile-agent — DeepSeek Harness 手机访问DeepSeek Harness
 
+由于ds涨价，已停止更新
 
 手机浏览器登录后获得与桌面端**完全一致**的 DeepSeek Harness 原版界面与全部功能
 （会话、工具调用、审批、设置等），并支持**持久登录**：勾选「记住我」后 30 天
